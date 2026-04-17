@@ -3,15 +3,16 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
 import { useEffect } from "react";
-import { ArrowRight, Brain, Leaf, Shield, BarChart3, Utensils } from "lucide-react";
+import { ArrowRight, Brain, Leaf, Shield, BarChart3, Utensils, Target } from "lucide-react";
 import heroFood from "@/assets/hero-food.jpg";
 
 const features = [
-  { icon: Brain, title: "AI-Powered Plans", desc: "Personalized nutrition recommendations using intelligent algorithms" },
-  { icon: Leaf, title: "Indian Diet Focus", desc: "Built around real Indian food items and dietary patterns" },
-  { icon: BarChart3, title: "Track Daily Macros", desc: "Monitor calories, protein, carbs & fat intake effortlessly" },
-  { icon: Utensils, title: "Smart Meal Logging", desc: "Log meals with photos and get next meal suggestions" },
-  { icon: Shield, title: "Explainable AI", desc: "Understand why each recommendation is made for you" },
+  { icon: Brain, slug: "ai-powered-plans", title: "AI-Powered Plans", desc: "Personalized nutrition recommendations using intelligent algorithms" },
+  { icon: Leaf, slug: "indian-diet-focus", title: "Indian Diet Focus", desc: "Built around real Indian food items and dietary patterns" },
+  { icon: BarChart3, slug: "track-daily-macros", title: "Track Daily Macros", desc: "Monitor calories, protein, carbs & fat intake effortlessly" },
+  { icon: Utensils, slug: "smart-meal-logging", title: "Smart Meal Logging", desc: "Log meals with photos and get next meal suggestions" },
+  { icon: Shield, slug: "explainable-ai", title: "Explainable AI", desc: "Understand why each recommendation is made for you" },
+  { icon: Target, slug: "healthy-habits-coach", title: "Healthy Habits Coach", desc: "Stay consistent with reminders, mini goals, and weekly nutrition check-ins" },
 ];
 
 const Index = () => {
@@ -30,7 +31,7 @@ const Index = () => {
       <nav className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto flex items-center justify-between h-16 px-4">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">🥗</span>
+            <img src="/app-logo.png" alt="NutriAI logo" className="h-8 w-8 rounded-md object-cover" />
             <span className="font-display text-xl font-bold text-foreground">NutriAI</span>
           </div>
           <Button asChild variant="outline" className="font-body gap-2">
@@ -101,18 +102,30 @@ const Index = () => {
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
             {features.map((f, i) => (
               <motion.div
-                key={i}
+                key={f.slug}
                 initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.1 }}
-                className="bg-card rounded-xl p-6 shadow-card hover:shadow-elevated transition-shadow"
+                className="bg-card rounded-xl p-6 shadow-card hover:shadow-elevated hover:-translate-y-1 transition-all cursor-pointer border border-transparent hover:border-primary/20"
+                onClick={() => navigate(`/features/${f.slug}`)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    navigate(`/features/${f.slug}`);
+                  }
+                }}
               >
                 <div className="w-12 h-12 rounded-lg gradient-hero flex items-center justify-center mb-4">
                   <f.icon className="w-6 h-6 text-primary-foreground" />
                 </div>
                 <h3 className="font-display text-lg font-semibold text-foreground mb-2">{f.title}</h3>
                 <p className="text-sm text-muted-foreground font-body">{f.desc}</p>
+                <span className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
+                  Read details <ArrowRight className="w-4 h-4" />
+                </span>
               </motion.div>
             ))}
           </div>
@@ -131,9 +144,6 @@ const Index = () => {
             <h2 className="text-3xl md:text-4xl font-bold font-display text-primary-foreground mb-4">
               Start Your Nutrition Journey Today
             </h2>
-            <p className="text-primary-foreground/80 font-body mb-8 max-w-md mx-auto">
-              Join thousands of Indians making smarter food choices with AI-powered recommendations.
-            </p>
             <Button
               size="lg"
               asChild

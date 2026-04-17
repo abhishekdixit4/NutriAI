@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +11,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { calculateTargets } from "@/lib/nutrition";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
-import { ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 
 const Onboarding = () => {
   const { user, loading: authLoading } = useAuth();
@@ -134,13 +134,21 @@ const Onboarding = () => {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <Link
+        to="/dashboard"
+        className="absolute top-4 left-4 flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Back
+      </Link>
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-lg"
       >
         <div className="text-center mb-8">
-          <span className="text-4xl">🥗</span>
+          <img src="/app-logo.png" alt="NutriAI logo" className="mx-auto h-12 w-12 rounded-md object-cover" />
           <h1 className="text-3xl font-bold font-display text-foreground mt-2">Set Up Your Profile</h1>
           <p className="text-muted-foreground font-body mt-2">Tell us about yourself for personalized nutrition plans</p>
         </div>

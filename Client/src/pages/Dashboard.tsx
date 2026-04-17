@@ -9,7 +9,7 @@ import MealSuggestions from "@/components/MealSuggestions";
 import AddMealDialog from "@/components/AddMealDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { LogOut, Settings, Flame, Target, ChevronLeft, ChevronRight, History } from "lucide-react";
+import { LogOut, Mail, Flame, Target, ChevronLeft, ChevronRight, History } from "lucide-react";
 import { motion } from "framer-motion";
 import { format, isToday, isYesterday, addDays, subDays } from "date-fns";
 import type { Profile, MealLog } from "@/integrations/appwrite/types";
@@ -74,6 +74,20 @@ const Dashboard = () => {
     }
   }, [user, selectedDate, fetchProfile, fetchMealsForDate, navigate]);
 
+  const loadMealsForDate = useCallback(
+    async (date: Date) => {
+      setSelectedDate(date);
+      setLoadingData(true);
+      try {
+        const list = await fetchMealsForDate(date);
+        setMeals(list);
+      } finally {
+        setLoadingData(false);
+      }
+    },
+    [fetchMealsForDate]
+  );
+
   useEffect(() => {
     if (!authLoading && !user) {
       navigate("/");
@@ -85,15 +99,11 @@ const Dashboard = () => {
   const handleDateChange = (delta: number) => {
     const next = addDays(selectedDate, delta);
     if (next > new Date()) return;
-    setSelectedDate(next);
-    setLoadingData(true);
-    fetchMealsForDate(next).then(setMeals).finally(() => setLoadingData(false));
+    loadMealsForDate(next);
   };
 
   const goToToday = () => {
-    setSelectedDate(new Date());
-    setLoadingData(true);
-    fetchMealsForDate(new Date()).then(setMeals).finally(() => setLoadingData(false));
+    loadMealsForDate(new Date());
   };
 
   if (authLoading || loadingData) {
@@ -131,15 +141,15 @@ const Dashboard = () => {
       <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
         <div className="container mx-auto flex items-center justify-between h-16 px-4">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">🥗</span>
+            <img src="/app-logo.png" alt="NutriAI logo" className="h-8 w-8 rounded-md object-cover" />
             <span className="font-display text-xl font-bold text-foreground">NutriAI</span>
           </div>
           <div className="flex items-center gap-2">
             <AddMealDialog onMealAdded={fetchData} />
-            <Button variant="ghost" size="icon" onClick={() => navigate("/onboarding")}>
-              <Settings className="w-5 h-5" />
+            <Button variant="ghost" size="icon" onClick={() => navigate("/settings")} aria-label="Open contact page">
+              <Mail className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={signOut}>
+            <Button variant="ghost" size="icon" onClick={signOut} aria-label="Sign out">
               <LogOut className="w-5 h-5" />
             </Button>
           </div>
@@ -183,13 +193,13 @@ const Dashboard = () => {
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-lg">{formatDateLabel(selectedDate)}</h2>
             <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon" onClick={() => handleDateChange(-1)}>
+              <Button variant="outline" size="icon" onClick={() => handleDateChange(-1)} aria-label="View previous day meals">
                 <ChevronLeft className="w-4 h-4" />
               </Button>
               <Button variant="outline" size="sm" onClick={goToToday} disabled={isToday(selectedDate)}>
                 Today
               </Button>
-              <Button variant="outline" size="icon" onClick={() => handleDateChange(1)} disabled={isToday(selectedDate)}>
+              <Button variant="outline" size="icon" onClick={() => handleDateChange(1)} disabled={isToday(selectedDate)} aria-label="View next day meals">
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>
@@ -249,11 +259,7 @@ const Dashboard = () => {
                       key={daysAgo}
                       variant={isSelected ? "default" : "outline"}
                       size="sm"
-                      onClick={() => {
-                        setSelectedDate(d);
-                        setLoadingData(true);
-                        fetchMealsForDate(d).then(setMeals).finally(() => setLoadingData(false));
-                      }}
+                      onClick={() => loadMealsForDate(d)}
                     >
                       {formatDateLabel(d)}
                     </Button>

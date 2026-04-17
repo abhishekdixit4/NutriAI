@@ -78,7 +78,7 @@ const Login = () => {
         <Card>
           <CardHeader className="text-center">
             <div className="flex justify-center mb-2">
-              <span className="text-3xl">🥗</span>
+              <img src="/app-logo.png" alt="NutriAI logo" className="h-10 w-10 rounded-md object-cover" />
             </div>
             <CardTitle className="text-2xl font-display">NutriAI</CardTitle>
             <CardDescription>Sign in or create an account to get started</CardDescription>
