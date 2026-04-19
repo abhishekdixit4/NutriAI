@@ -5,6 +5,6 @@
     "build": "npm ci --prefix Client && npm run build --prefix Client"
   },
   "engines": {
-    "node": "18.x"
+    "node": "24.x"
   }
 }
