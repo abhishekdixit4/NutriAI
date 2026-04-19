@@ -131,7 +131,7 @@ const Settings = () => {
                   <MessageSquareHeart className="w-5 h-5 text-primary" />
                   Contact Form
                 </CardTitle>
-                <CardDescription>
+                <CardDescription className="break-words">
                   {contactFormReady
                     ? "Submissions are sent with Web3Forms to the owner’s inbox."
                     : "Add VITE_WEB3FORMS_ACCESS_KEY in Client/.env (get a key at web3forms.com), then restart dev. For production, add the same variable in Vercel and redeploy."}
@@ -205,12 +205,12 @@ const Settings = () => {
                     <Button
                       type="submit"
                       disabled={sending || !contactFormReady}
-                      className="gradient-hero text-primary-foreground gap-2 shadow-warm w-full sm:w-auto"
+                      className="gradient-hero text-primary-foreground gap-2 shadow-warm w-full sm:w-auto whitespace-normal h-auto py-2 text-center"
                     >
                       <Send className="w-4 h-4" />
-                      {sending ? "Sending..." : contactFormReady ? "Send Message" : "Configure VITE_WEB3FORMS_ACCESS_KEY"}
+                      {sending ? "Sending..." : contactFormReady ? "Send Message" : "Configure Contact Form Key"}
                     </Button>
-                    <Button type="button" variant="outline" onClick={() => setShowWelcome(true)}>
+                    <Button type="button" variant="outline" onClick={() => setShowWelcome(true)} className="w-full sm:w-auto">
                       Back to Welcome
                     </Button>
                   </div>
