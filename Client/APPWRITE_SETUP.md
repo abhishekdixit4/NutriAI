@@ -54,7 +54,7 @@
 2. Runtime: **Node.js 18**
 3. Add environment variables:
    - `GEMINI_API_KEY` or `OPENAI_API_KEY` or `REPLICATE_API_TOKEN` or `HUGGINGFACE_TOKEN`
-4. Deploy the code from `appwrite/functions/analyze-food-image/src/main.js`
+4. Deploy the code from `appwrite/functions/analyze-food-image/src/` (**include `main.js` and `foods-database.json`** — ~5000 Indian food keywords). To regenerate the JSON: `node scripts/generate-foods-database.mjs` from `analyze-food-image`.
 5. Set **Execute** permission to `users` or `any`
 
 ## 6. Environment Variables
@@ -66,6 +66,9 @@ VITE_APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
 VITE_APPWRITE_PROJECT_ID=your_project_id
 VITE_APPWRITE_DATABASE_ID=nutriai
 VITE_APPWRITE_ANALYZE_FUNCTION_ID=analyze-food-image
+
+# Contact form (required): get an access key at https://web3forms.com
+# VITE_WEB3FORMS_ACCESS_KEY=your_key
 ```
 
 ## 7. Run

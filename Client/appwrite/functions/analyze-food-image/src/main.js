@@ -1,10 +1,30 @@
 // Appwrite Cloud Function - Strict & Safe Indian Food Detector
 // Env vars: GEMINI_API_KEY, OPENAI_API_KEY, REPLICATE_API_TOKEN, HUGGINGFACE_TOKEN
+// Deploy `foods-database.json` next to main.js (~5000 keyword rows). Regenerate: node scripts/generate-foods-database.mjs
 
-const ALLOWED_FOODS = {
-  paneer: { name: "Paneer Curry", calories: 300 },
-  "paneer curry": { name: "Paneer Curry", calories: 300 },
+import { readFileSync } from "fs";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+let BULK_FOODS = {};
+try {
+  BULK_FOODS = JSON.parse(readFileSync(join(__dirname, "foods-database.json"), "utf8"));
+} catch {
+  /* optional file — function still works with critical map only */
+}
+
+/** Hand-tuned entries override bulk (paneer vs biryani, rice-dish skips, etc.) */
+const CRITICAL_FOODS = {
+  /** Longer / more specific keys are matched first (see buildFinalResult). */
   "paneer butter masala": { name: "Paneer Butter Masala", calories: 300 },
+  "paneer cubes": { name: "Plain Paneer", calories: 265 },
+  "plain paneer": { name: "Plain Paneer", calories: 265 },
+  "cottage cheese": { name: "Plain Paneer", calories: 265 },
+  "paneer tikka": { name: "Paneer Tikka", calories: 290 },
+  "paneer curry": { name: "Paneer Curry", calories: 300 },
+  paneer: { name: "Paneer Curry", calories: 300 },
   biryani: { name: "Biryani", calories: 290 },
   dosa: { name: "Dosa", calories: 120 },
   "masala dosa": { name: "Masala Dosa", calories: 250 },
@@ -30,8 +50,6 @@ const ALLOWED_FOODS = {
   "fried rice": { name: "Fried Rice", calories: 330 },
   vada: { name: "Vada", calories: 150 },
   "medu vada": { name: "Vada", calories: 150 },
-  "paneer tikka": { name: "Paneer Tikka", calories: 290 },
-  "paneer cubes": { name: "Paneer Curry", calories: 300 },
   "lentil curry": { name: "Dal", calories: 180 },
   lentil: { name: "Dal", calories: 180 },
   curry: { name: "Vegetable Curry", calories: 220 },
@@ -42,9 +60,17 @@ const ALLOWED_FOODS = {
   chawal: { name: "Rice", calories: 220 },
 };
 
+const ALLOWED_FOODS = { ...BULK_FOODS, ...CRITICAL_FOODS };
+const SORTED_FOOD_ENTRIES = Object.entries(ALLOWED_FOODS).sort((a, b) => b[0].length - a[0].length);
+
 const NON_FOOD_KEYWORDS = [
   "person",
+  "people",
   "human",
+  "woman",
+  "boy",
+  "girl",
+  "portrait",
   "face",
   "selfie",
   "car",
@@ -76,19 +102,65 @@ const NON_FOOD_KEYWORDS = [
   "chair",
 ];
 
-const FOOD_SIGNAL_KEYWORDS = [
+/** Strong visual/ingredient cues — used to override non-food labels. */
+const FOOD_SIGNAL_CONCRETE = [
   "plate",
   "bowl",
   "curry",
   "rice",
   "bread",
   "snack",
-  "lunch",
-  "dinner",
-  "breakfast",
   "vegetable",
   "lentil",
+  "chapati",
+  "roti",
+  "naan",
+  "paratha",
+  "dosa",
+  "idli",
+  "biryani",
+  "pulao",
+  "khichdi",
+  "samosa",
+  "egg",
+  "paneer",
+  "sambar",
+  "rasam",
 ];
+
+/**
+ * Weak words (meal, food, dish) often appear in wrong captions — only count as
+ * food evidence when there are no strong non-food labels.
+ */
+const FOOD_SIGNAL_GENERIC = ["meal", "food", "dish", "cuisine", "cooked", "recipe", "lunch", "dinner", "breakfast"];
+
+/** Rice-heavy dishes — do not pick these from keywords when the scene looks like paneer/cubes only (no rice). */
+const RICE_DISH_KEYS = new Set(["biryani", "pulao", "pulav", "fried rice", "khichdi"]);
+
+function paneerLikeHaystack(labels) {
+  const s = labels.join(" ");
+  return (
+    /\b(paneer|cottage cheese|chenna|chhena|indian cheese|cheese cube)\b/i.test(s) ||
+    /\b(white cubes|cubed cheese|cubes|cubed)\b/i.test(s) ||
+    (s.includes("cube") && /\b(white|cream|paneer)\b/i.test(s))
+  );
+}
+
+/** Actual rice/grains visible — do NOT treat the word "biryani" alone as rice proof (models hallucinate). */
+function riceVisibleHaystack(labels) {
+  const s = labels.join(" ");
+  return /\b(rice|pulao|basmati|jeera rice|fried rice|steamed rice|grains)\b/i.test(s);
+}
+
+/** Allow matching keyword "biryani" only when labels mention rice OR a typical X biryani phrase. */
+function allowBiryaniKeywordMatch(haystack) {
+  if (!haystack.includes("biryani")) return true;
+  return (
+    /\b(rice|basmati|pulao|fried rice|jeera)\b/i.test(haystack) ||
+    /\b(chicken|mutton|lamb|egg|fish|prawn|shrimp|veg|vegetable|paneer)\s+biryani\b/i.test(haystack) ||
+    /\b(hyderabadi|lucknow|awadhi|dum)\s*biryani\b/i.test(haystack)
+  );
+}
 
 function nonFoodResponse(labels) {
   return {
@@ -177,64 +249,112 @@ function mergeUniqueLabels(existing, incoming, max = 12) {
   return existing;
 }
 
-function buildFinalResult(labels, fallbackCalories = 250) {
+/** Gemini/OpenAI `primary`: what we show as Meal Name — not replaced by keyword DB when present. */
+function sanitizeAiPrimary(raw) {
+  let s = String(raw || "")
+    .trim()
+    .replace(/\s+/g, " ");
+  if (s.length < 2 || s.length > 120) return "";
+  const lower = s.toLowerCase();
+  const banned = ["food", "meal", "dish", "unknown", "not sure", "unclear", "cannot identify", "indian meal", "n/a", "none"];
+  if (banned.includes(lower)) return "";
+  return s;
+}
+
+function nutritionPayload(mealName, caloriesNum, cleanLabels, source) {
+  return {
+    foodName: mealName,
+    calories: `${caloriesNum} kcal`,
+    source,
+    detectedLabels: cleanLabels.slice(0, 5),
+    isFoodImage: true,
+    meal_name: mealName,
+    calories_value: caloriesNum,
+    calories_num: caloriesNum,
+    protein_g: Math.round((caloriesNum * 0.14) / 4),
+    carbs_g: Math.round((caloriesNum * 0.56) / 4),
+    fat_g: Math.round((caloriesNum * 0.3) / 9),
+  };
+}
+
+function buildFinalResult(labels, fallbackCalories = 250, aiPrimaryPreferred = "") {
   const cleanLabels = labels.map((l) => normalizeText(l)).filter(Boolean).slice(0, 12);
-  const hasFoodKeyword = cleanLabels.some((label) =>
-    Object.keys(ALLOWED_FOODS).some((keyword) => label.includes(keyword))
+  const labelHaystack = cleanLabels.join(" ");
+  const preferred = sanitizeAiPrimary(aiPrimaryPreferred);
+  const macroHaystack = preferred ? `${normalizeText(preferred)} ${labelHaystack}`.trim() : labelHaystack;
+
+  const hasFoodKeyword =
+    SORTED_FOOD_ENTRIES.some(([keyword]) => macroHaystack.includes(keyword)) || Boolean(preferred);
+  const hasConcreteFoodSignal = cleanLabels.some((label) =>
+    FOOD_SIGNAL_CONCRETE.some((keyword) => label.includes(keyword))
   );
-  const hasFoodSignal = cleanLabels.some((label) =>
-    FOOD_SIGNAL_KEYWORDS.some((keyword) => label.includes(keyword))
+  const hasGenericFoodWord = cleanLabels.some((label) =>
+    FOOD_SIGNAL_GENERIC.some((keyword) => label.includes(keyword))
   );
   const hasNonFoodKeyword = cleanLabels.some((label) =>
     NON_FOOD_KEYWORDS.some((keyword) => label.includes(keyword))
   );
+  /** Reject selfies/scenes: generic words like "meal" do not save a person-only label set. */
+  const hasFoodEvidence =
+    hasFoodKeyword ||
+    hasConcreteFoodSignal ||
+    (hasGenericFoodWord && !hasNonFoodKeyword) ||
+    Boolean(preferred);
 
-  if (!hasFoodKeyword && !hasFoodSignal && hasNonFoodKeyword) {
+  if (!hasFoodEvidence && hasNonFoodKeyword) {
     return nonFoodResponse(cleanLabels);
   }
 
-  for (const label of cleanLabels) {
-    for (const [keyword, value] of Object.entries(ALLOWED_FOODS)) {
-      if (label.includes(keyword)) {
-        const calories = value.calories;
-        return {
-          foodName: value.name,
-          calories: `${calories} kcal`,
-          source: "AI + exact keyword match",
-          detectedLabels: cleanLabels.slice(0, 5),
-          isFoodImage: true,
-          meal_name: value.name,
-          calories_value: calories,
-          calories_num: calories,
-          protein_g: Math.round((calories * 0.14) / 4),
-          carbs_g: Math.round((calories * 0.56) / 4),
-          fat_g: Math.round((calories * 0.3) / 9),
-        };
-      }
+  const paneerScene = paneerLikeHaystack(cleanLabels);
+  const riceScene = riceVisibleHaystack(cleanLabels);
+  const cubeOrWhiteProtein = /\b(cube|cubes|cubed|paneer|tofu|cottage)\b/i.test(labelHaystack);
+  const skipRiceDishes = (paneerScene && !riceScene) || (cubeOrWhiteProtein && !riceScene);
+
+  for (const [keyword, value] of SORTED_FOOD_ENTRIES) {
+    if (skipRiceDishes && RICE_DISH_KEYS.has(keyword)) continue;
+    if (keyword === "biryani" && !allowBiryaniKeywordMatch(macroHaystack)) continue;
+    if (macroHaystack.includes(keyword)) {
+      const mealName = preferred || value.name;
+      const src = preferred
+        ? `Vision model dish name + calorie match (${keyword})`
+        : "Keyword match (longest-first)";
+      return nutritionPayload(mealName, value.calories, cleanLabels, src);
     }
   }
 
-  const calories = fallbackCalories;
-  return {
-    foodName: "Indian Meal",
-    calories: `${calories} kcal`,
-    source: "Safe fallback",
-    detectedLabels: cleanLabels.slice(0, 5),
-    isFoodImage: true,
-    meal_name: "Indian Meal",
-    calories_value: calories,
-    calories_num: calories,
-    protein_g: Math.round((calories * 0.14) / 4),
-    carbs_g: Math.round((calories * 0.56) / 4),
-    fat_g: Math.round((calories * 0.3) / 9),
-  };
+  if (skipRiceDishes) {
+    const c = 265;
+    if (preferred) {
+      return nutritionPayload(preferred, c, cleanLabels, "Vision model name (paneer-like scene, estimated kcal)");
+    }
+    return nutritionPayload("Plain Paneer", c, cleanLabels, "Paneer-like image (rice dishes excluded)");
+  }
+
+  if (preferred) {
+    return nutritionPayload(preferred, fallbackCalories, cleanLabels, "Vision model dish name (estimated macros)");
+  }
+
+  return nutritionPayload("Indian Meal", fallbackCalories, cleanLabels, "Safe fallback");
 }
 
 async function analyzeWithGemini(apiKey, mimeType, base64Data) {
-  const prompt = `Identify food from this image with TOP 5 labels.
+  const prompt = `You are the vision brain for a meal-tracking website. Output what the user should see as the dish name.
+
+Return JSON only:
+- isFoodImage: true if any food/drink meant to eat is clearly visible; false for selfies, only a face, empty plate, pets, phones, documents, non-food.
+
+- primary: THIS IS THE MAIN DISH NAME SHOWN ON THE WEBSITE. Write it like you are telling a friend exactly what is on the plate:
+  • If idli AND sambar (or any combo) are visible → e.g. "Idli with sambar" or "Idli, sambar and coconut chutney" (describe everything important you see).
+  • If only paneer cubes / cheese cubes → e.g. "Plain paneer cubes" (do not say biryani unless you clearly see rice in a rice dish).
+  • If one main item only → name that item simply, e.g. "Paneer", "Masala dosa", "Veg thali".
+  • Thali / multiple compartments → list the main parts, e.g. "South Indian veg thali with sambar and rice".
+
+- labels: up to 5 short English tags (ingredients + dish types) to help search.
+
+Be specific. Never use vague words alone like "food" or "meal" for primary.
+
 Return ONLY JSON:
-{"labels":["label1","label2","label3","label4","label5"],"primary":"best guess","isFoodImage":true}
-If image is not food, set "isFoodImage": false and return scene/object labels.`;
+{"labels":["tag1","tag2"],"primary":"exact dish description for the UI","isFoodImage":true}`;
   const models = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash"];
   for (const model of models) {
     try {
@@ -273,7 +393,7 @@ async function analyzeWithOpenAI(apiKey, mimeType, base64Data) {
           {
             type: "text",
             text:
-              "Extract TOP 5 labels and primary label. If image is not food then set isFoodImage false and give scene/object labels. Return ONLY JSON: {\"labels\":[\"a\",\"b\",\"c\",\"d\",\"e\"],\"primary\":\"best label\",\"isFoodImage\":true}",
+              'Meal tracker UI: primary = exact dish name users see (e.g. "Idli with sambar", "Plain paneer cubes only"). Combine items on the plate in primary. isFoodImage=false only if no real food visible. JSON only: {"labels":[],"primary":"","isFoodImage":true}',
           },
         ],
       }],
@@ -351,6 +471,8 @@ export default async ({ req, res, log, error }) => {
 
     let aggregatedLabels = [];
     let successfulProviders = 0;
+    /** First structured JSON vision result (Gemini/OpenAI) — primary is the website meal name. */
+    let visionPrimary = "";
 
     for (const provider of providers) {
       if (!provider.enabled) continue;
@@ -358,6 +480,10 @@ export default async ({ req, res, log, error }) => {
         const result = await provider.run();
         const payload = typeof result === "string" ? parseJsonLoose(result) : null;
         const caption = typeof result === "object" && result?.caption ? result.caption : "";
+        if (!visionPrimary && payload && typeof payload.primary === "string") {
+          const p = String(payload.primary).trim();
+          if (p) visionPrimary = p;
+        }
         let labels = labelsFromAiPayload(payload, caption);
         if (payload?.primary && labels.length < 5) labels.unshift(normalizeText(payload.primary));
         if (payload?.isFoodImage === false) {
@@ -372,19 +498,27 @@ export default async ({ req, res, log, error }) => {
       }
     }
 
+    if (aggregatedLabels.length === 0 && visionPrimary) {
+      aggregatedLabels = [normalizeText(visionPrimary)];
+    }
+
     if (aggregatedLabels.length > 0) {
-      const finalResult = buildFinalResult(aggregatedLabels, fallbackCalories);
+      const finalResult = buildFinalResult(aggregatedLabels, fallbackCalories, visionPrimary);
       return res.json({
         ...finalResult,
         source: `${finalResult.source} (${successfulProviders} provider${successfulProviders === 1 ? "" : "s"})`,
       });
     }
 
-    const fallback = buildFinalResult(["indian food", "meal"], fallbackCalories);
-    return res.json({ ...fallback, source: "Final safe fallback" });
+    return res.json(
+      nonFoodResponse([
+        "unable to classify",
+        "configure gemini or openai for best results",
+        "no labels from vision providers",
+      ])
+    );
   } catch (err) {
     error(err);
-    const fallback = buildFinalResult(["indian food", "meal"], 250);
-    return res.json({ ...fallback, source: "Error fallback" });
+    return res.json(nonFoodResponse(["analysis error"]));
   }
 };

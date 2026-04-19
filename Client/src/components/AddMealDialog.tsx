@@ -37,6 +37,7 @@ const AddMealDialog = ({ onMealAdded }: AddMealDialogProps) => {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [cameraVideoReady, setCameraVideoReady] = useState(false);
   const [showWelcomeStep, setShowWelcomeStep] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
   const mealNameRef = useRef<HTMLInputElement>(null);
@@ -79,12 +80,14 @@ const AddMealDialog = ({ onMealAdded }: AddMealDialogProps) => {
       streamRef.current = null;
     }
     setIsCameraOpen(false);
+    setCameraVideoReady(false);
   };
 
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
       streamRef.current = stream;
+      setCameraVideoReady(false);
       setIsCameraOpen(true);
       setTimeout(() => {
         if (videoRef.current) videoRef.current.srcObject = stream;
@@ -97,9 +100,15 @@ const AddMealDialog = ({ onMealAdded }: AddMealDialogProps) => {
   const captureFromCamera = async () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) {
+      toast.error("Camera is still starting — wait a second, then capture again.");
+      return;
+    }
     const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
+    canvas.width = vw;
+    canvas.height = vh;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -141,64 +150,6 @@ const AddMealDialog = ({ onMealAdded }: AddMealDialogProps) => {
       img.onerror = () => {
         URL.revokeObjectURL(objectUrl);
         reject(new Error("Failed to load image"));
-      };
-      img.src = objectUrl;
-    });
-  };
-
-  const detectVisualFoodHint = (file: File): Promise<null | { mealName: string; calories: number; protein: number; carbs: number; fat: number }> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(file);
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = 64;
-        canvas.height = 64;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          URL.revokeObjectURL(objectUrl);
-          return resolve(null);
-        }
-        ctx.drawImage(img, 0, 0, 64, 64);
-        const pixels = ctx.getImageData(0, 0, 64, 64).data;
-
-        let rSum = 0;
-        let gSum = 0;
-        let bSum = 0;
-        const total = 64 * 64;
-
-        for (let i = 0; i < pixels.length; i += 4) {
-          rSum += pixels[i];
-          gSum += pixels[i + 1];
-          bSum += pixels[i + 2];
-        }
-
-        const rAvg = rSum / total;
-        const gAvg = gSum / total;
-        const bAvg = bSum / total;
-        const brightness = (rAvg + gAvg + bAvg) / 3;
-        const maxRGB = Math.max(rAvg, gAvg, bAvg);
-        const minRGB = Math.min(rAvg, gAvg, bAvg);
-        const saturation = maxRGB === 0 ? 0 : ((maxRGB - minRGB) / maxRGB) * 100;
-
-        // Paneer-like visual profile: bright + low saturation (white cubes/curd tones)
-        if (brightness > 170 && saturation < 28) {
-          URL.revokeObjectURL(objectUrl);
-          return resolve({ mealName: "Paneer Curry", calories: 300, protein: 17, carbs: 10, fat: 22 });
-        }
-
-        // Dal-like visual profile: warm yellow/orange dominant
-        if (rAvg > 150 && gAvg > 110 && bAvg < 120 && rAvg > bAvg + 35) {
-          URL.revokeObjectURL(objectUrl);
-          return resolve({ mealName: "Dal", calories: 180, protein: 9, carbs: 24, fat: 6 });
-        }
-
-        URL.revokeObjectURL(objectUrl);
-        resolve(null);
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        resolve(null);
       };
       img.src = objectUrl;
     });
@@ -316,27 +267,14 @@ const AddMealDialog = ({ onMealAdded }: AddMealDialogProps) => {
         return h;
       };
 
+      /** Never invent random dish names when the API is uncertain — only "Indian Meal" + approximate macros. */
       const derivePhotoEstimate = (seed: string) => {
-        const options = [
-          { mealName: "Dal", calories: 180, protein: 9, carbs: 24, fat: 6 },
-          { mealName: "Paneer Curry", calories: 300, protein: 17, carbs: 10, fat: 22 },
-          { mealName: "Chole", calories: 270, protein: 11, carbs: 35, fat: 9 },
-          { mealName: "Rajma", calories: 250, protein: 10, carbs: 33, fat: 7 },
-          { mealName: "Poha", calories: 180, protein: 4, carbs: 32, fat: 4 },
-          { mealName: "Upma", calories: 200, protein: 5, carbs: 30, fat: 6 },
-          { mealName: "Biryani", calories: 290, protein: 8, carbs: 38, fat: 11 },
-          { mealName: "Dosa", calories: 120, protein: 3, carbs: 20, fat: 3 },
-        ];
         const h = hashText(seed || `${Date.now()}`);
-        const base = options[h % options.length];
-        const calOffset = (h % 21) - 10;
-        return {
-          mealName: base.mealName,
-          calories: Math.max(80, base.calories + calOffset),
-          protein: Math.max(1, base.protein + (h % 3) - 1),
-          carbs: Math.max(1, base.carbs + (h % 7) - 3),
-          fat: Math.max(1, base.fat + (h % 3) - 1),
-        };
+        const calories = Math.max(180, 220 + (h % 121));
+        const protein = Math.max(6, Math.round((calories * 0.12) / 4));
+        const carbs = Math.max(15, Math.round((calories * 0.55) / 4));
+        const fat = Math.max(5, Math.round((calories * 0.28) / 9));
+        return { mealName: "Indian Meal", calories, protein, carbs, fat };
       };
 
       const applyEstimateValues = (
@@ -352,11 +290,11 @@ const AddMealDialog = ({ onMealAdded }: AddMealDialogProps) => {
 
       const base64 = await compressImage(imageFile);
       const imageSeed = base64.slice(0, 2000);
-      const visualHint = await detectVisualFoodHint(imageFile);
       const likelyNonFoodVisual = await isLikelyNonFoodImage(imageFile);
       const containsFace = await isFacePhoto(imageFile);
-      const shouldBlockAsNonFood = containsFace || likelyNonFoodVisual;
-      if (shouldBlockAsNonFood) {
+      /** Only guess when no face and not a portrait-like frame; dish names come from the AI function, not pixel hacks. */
+      const mayGuessMacrosFromPixels = !containsFace && !likelyNonFoodVisual;
+      if (likelyNonFoodVisual) {
         toast.error("Please add a food photo for detection.");
         return;
       }
@@ -365,11 +303,11 @@ const AddMealDialog = ({ onMealAdded }: AddMealDialogProps) => {
       const execution = await functions.createExecution(ANALYZE_FUNCTION_ID, body, false);
       const responseBody = execution.responseBody;
       if (!responseBody) {
-        if (shouldBlockAsNonFood) {
-          toast.error("Please add a food photo for detection.");
+        if (!mayGuessMacrosFromPixels) {
+          toast.error("No food detected. Point the camera at your plate or meal, not your face.");
           return;
         }
-        applyEstimateValues(visualHint || derivePhotoEstimate(imageSeed));
+        applyEstimateValues(derivePhotoEstimate(imageSeed));
         toast.success("AI estimated values from photo. You can review and save.");
         return;
       }
@@ -378,21 +316,19 @@ const AddMealDialog = ({ onMealAdded }: AddMealDialogProps) => {
       const labels = Array.isArray(data?.detectedLabels)
         ? data.detectedLabels.map((v: unknown) => String(v || "").toLowerCase())
         : [];
-      const hasNonFoodLabel = labels.some((l: string) =>
-        ["person", "human", "selfie", "face", "car", "vehicle", "room", "building", "road", "laptop", "phone", "book", "document"].some((k) =>
-          l.includes(k)
-        )
-      );
+      const nonFoodPatterns =
+        /\b(person|people|human|humans|man|woman|women|boy|girl|portrait|selfie|faces?|cars?|vehicles?|buildings?|roads?|laptops?|phones?|books?|documents?)\b/i;
+      const hasNonFoodLabel = labels.some((l: string) => nonFoodPatterns.test(String(l)));
       if (data?.errorType === "NON_FOOD" || data?.isFoodImage === false || hasNonFoodLabel) {
         toast.error("Please add a food photo for detection.");
         return;
       }
       if (data?.error) {
-        if (shouldBlockAsNonFood) {
-          toast.error("Please add a food photo for detection.");
+        if (!mayGuessMacrosFromPixels) {
+          toast.error("No food detected. Point the camera at your plate or meal, not your face.");
           return;
         }
-        applyEstimateValues(visualHint || derivePhotoEstimate(imageSeed));
+        applyEstimateValues(derivePhotoEstimate(imageSeed));
         toast.success("AI estimated values from photo. You can review and save.");
         return;
       }
@@ -410,7 +346,19 @@ const AddMealDialog = ({ onMealAdded }: AddMealDialogProps) => {
       const parsedCarbs = parseNumeric(data?.carbs_g ?? 0);
       const parsedFat = parseNumeric(data?.fat_g ?? 0);
       const normalizedName = rawMealName.toLowerCase().trim();
-      const genericMealNames = ["meal", "food", "dish", "unknown dish"];
+      const genericMealNames = ["meal", "food", "dish", "unknown dish", "indian meal"];
+      const isGenericMealLabel = (name: string) => {
+        const n = String(name || "")
+          .toLowerCase()
+          .trim();
+        return n.length > 0 && genericMealNames.some((g) => n === g);
+      };
+      /** Never let the server's generic "Indian Meal" override a real estimate name. */
+      const resolveEstimateMealName = (raw: string, top: string, fallback: string) => {
+        if (raw && !isGenericMealLabel(raw)) return raw;
+        if (top && !isGenericMealLabel(top)) return top;
+        return fallback;
+      };
       const hasGenericName = genericMealNames.some((name) => normalizedName === name);
       const looksLikeLegacyFallback =
         normalizedName === "indian meal" &&
@@ -426,36 +374,18 @@ const AddMealDialog = ({ onMealAdded }: AddMealDialogProps) => {
         const source = String(data?.source || "AI");
         toast.success(`Meal detected (${source}). Review and save.`);
       } else {
-        if (shouldBlockAsNonFood) {
-          toast.error("Please add a food photo for detection.");
+        if (!mayGuessMacrosFromPixels) {
+          toast.error("No food detected. Point the camera at your plate or meal, not your face.");
           return;
         }
-        const estimate = visualHint || derivePhotoEstimate(imageSeed);
-        applyEstimateValues(estimate, rawMealName || topCandidateName || estimate.mealName);
+        const estimate = derivePhotoEstimate(imageSeed);
+        applyEstimateValues(estimate, resolveEstimateMealName(rawMealName, topCandidateName, estimate.mealName));
         const source = String(data?.source || "AI estimate");
         toast.success(`Estimated from photo (${source}). You can review and save.`);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "AI detection failed";
-      const seed = `${imageFile.name}-${imageFile.size}-${imageFile.lastModified}-${Date.now()}`;
-      let h = 0;
-      for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-      const caloriesVal = 220 + (h % 121);
-      const visualHint = await detectVisualFoodHint(imageFile);
-      if (visualHint) {
-        setMealName(visualHint.mealName);
-        setCalories(String(visualHint.calories));
-        setProtein(String(visualHint.protein));
-        setCarbs(String(visualHint.carbs));
-        setFat(String(visualHint.fat));
-      } else {
-        setMealName("Indian Meal");
-        setCalories(String(caloriesVal));
-        setProtein(String(Math.max(1, Math.round((caloriesVal * 0.14) / 4))));
-        setCarbs(String(Math.max(1, Math.round((caloriesVal * 0.56) / 4))));
-        setFat(String(Math.max(1, Math.round((caloriesVal * 0.3) / 9))));
-      }
-      toast.success(`${msg}. Estimated from photo. You can review and save.`);
+      toast.error(`${msg} Try again or enter your meal manually.`);
     } finally {
       setAnalyzing(false);
     }
@@ -602,9 +532,8 @@ const AddMealDialog = ({ onMealAdded }: AddMealDialogProps) => {
             <label
               htmlFor="meal-photo-input"
               className="mt-3 border-2 border-dashed border-border rounded-xl p-6 flex flex-col items-center gap-3 cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors"
-              onClick={() => !analyzing && fileRef.current?.click()}
             >
-              <input id="meal-photo-input" ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+              <input id="meal-photo-input" ref={fileRef} type="file" accept="image/*" className="sr-only" onChange={handleImageChange} />
               {imagePreview ? (
                 <div className="relative w-full">
                   <img src={imagePreview} alt="Preview" className="w-full h-44 rounded-lg object-cover shadow-card" />
@@ -642,9 +571,19 @@ const AddMealDialog = ({ onMealAdded }: AddMealDialogProps) => {
 
           {isCameraOpen && (
             <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-3">
-              <video ref={videoRef} autoPlay playsInline muted className="w-full h-48 object-cover rounded-lg bg-black" />
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-48 object-cover rounded-lg bg-black"
+                onLoadedMetadata={() => setCameraVideoReady(true)}
+              />
+              <p className="text-xs text-muted-foreground">
+                {cameraVideoReady ? "Camera ready — frame your meal, then capture." : "Starting camera…"}
+              </p>
               <div className="flex gap-2">
-                <Button type="button" size="sm" onClick={captureFromCamera}>
+                <Button type="button" size="sm" onClick={captureFromCamera} disabled={!cameraVideoReady}>
                   <Camera className="w-4 h-4 mr-1" /> Capture Photo
                 </Button>
                 <Button type="button" variant="outline" size="sm" onClick={stopCamera}>

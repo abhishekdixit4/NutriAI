@@ -10,8 +10,10 @@ import { toast } from "sonner";
 
 const CONTACT_EMAIL = "abhishekdixit597@gmail.com";
 const CONTACT_NAME = "Abhishek Dixit";
-const CONTACT_ENDPOINT =
-  import.meta.env.VITE_CONTACT_FORM_ENDPOINT?.trim() || "https://formsubmit.co/ajax/abhishekdixit597@gmail.com";
+
+/** https://web3forms.com — one access key, no FormSubmit “activate in inbox” step. */
+const WEB3FORMS_ACCESS_KEY = import.meta.env.VITE_WEB3FORMS_ACCESS_KEY?.trim();
+const contactFormReady = Boolean(WEB3FORMS_ACCESS_KEY);
 
 const Settings = () => {
   const [sending, setSending] = useState(false);
@@ -33,28 +35,31 @@ const Settings = () => {
       toast.error("Please fill all fields.");
       return;
     }
+    if (!WEB3FORMS_ACCESS_KEY) {
+      toast.error("Contact form is not configured. Add VITE_WEB3FORMS_ACCESS_KEY to .env and restart the dev server (or set it in Vercel and redeploy).");
+      return;
+    }
 
     setSending(true);
     try {
-      const response = await fetch(CONTACT_ENDPOINT, {
+      const subject = `NutriAI Contact - ${form.issueType}`;
+      const bodyText = `Issue Type: ${form.issueType}\n\n${form.message.trim()}`;
+
+      const response = await fetch("https://api.web3forms.com/submit", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({
+          access_key: WEB3FORMS_ACCESS_KEY,
+          subject,
           name: form.name.trim(),
           email: form.email.trim(),
-          message: `Issue Type: ${form.issueType}\n\n${form.message.trim()}`,
-          _subject: `NutriAI Contact - ${form.issueType}`,
-          _captcha: "false",
-          _template: "table",
+          message: bodyText,
+          from_name: form.name.trim(),
         }),
       });
-
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || data?.success === "false") {
-        throw new Error(data?.message || "Failed to send message.");
+      if (!response.ok || !data.success) {
+        throw new Error(typeof data.message === "string" ? data.message : "Failed to send message.");
       }
 
       toast.success("Message sent successfully.");
@@ -127,7 +132,9 @@ const Settings = () => {
                   Contact Form
                 </CardTitle>
                 <CardDescription>
-                  Contact the project owner directly.
+                  {contactFormReady
+                    ? "Submissions are sent with Web3Forms to the owner’s inbox."
+                    : "Add VITE_WEB3FORMS_ACCESS_KEY in Client/.env (get a key at web3forms.com), then restart dev. For production, add the same variable in Vercel and redeploy."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -195,9 +202,13 @@ const Settings = () => {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    <Button type="submit" disabled={sending} className="gradient-hero text-primary-foreground gap-2 shadow-warm w-full sm:w-auto">
+                    <Button
+                      type="submit"
+                      disabled={sending || !contactFormReady}
+                      className="gradient-hero text-primary-foreground gap-2 shadow-warm w-full sm:w-auto"
+                    >
                       <Send className="w-4 h-4" />
-                      {sending ? "Sending..." : "Send Message"}
+                      {sending ? "Sending..." : contactFormReady ? "Send Message" : "Configure VITE_WEB3FORMS_ACCESS_KEY"}
                     </Button>
                     <Button type="button" variant="outline" onClick={() => setShowWelcome(true)}>
                       Back to Welcome
