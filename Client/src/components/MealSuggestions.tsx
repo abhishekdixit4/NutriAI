@@ -3,107 +3,53 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sparkles } from "lucide-react";
 import { recipes } from "@/data/recipes";
+import { generateHybridRecommendations } from "@/lib/recommendation";
 
 interface Suggestion {
   name: string;
   calories: number;
   protein: number;
   description: string;
+  tier1Reason: string;
+  tier2Reason: string;
+  score: number;
 }
-
-const vegMealNames = [
-  "Moong Dal Chilla",
-  "Paneer Bhurji",
-  "Sprouts Salad",
-  "Ragi Dosa",
-  "Dal Chawal",
-  "Vegetable Pulao",
-  "Chana Masala",
-  "Palak Paneer",
-  "Idli with Sambar",
-  "Poha",
-  "Upma",
-  "Dahi Chaat",
-];
-
-const nonVegMealNames = [
-  "Chicken Curry",
-  "Egg Bhurji",
-  "Fish Fry",
-  "Mutton Biryani",
-  "Chicken Tikka",
-  "Egg Paratha",
-  "Prawn Curry",
-  "Chicken Pulao",
-  "Fish Curry",
-  "Keema Matar",
-  "Chicken Salad",
-  "Egg Rice",
-];
-
-const descriptions = [
-  "Balanced meal with good macros",
-  "High protein option",
-  "Light and nutritious",
-  "Filling and satisfying",
-  "Quick and healthy choice",
-  "Nutrient-dense option",
-  "Well-rounded meal",
-  "Energy-boosting selection",
-];
-
-const shuffle = <T,>(arr: T[]): T[] => {
-  const out = [...arr];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
-};
-
-const generateRandomSuggestions = (dietaryPreference?: string | null): Suggestion[] => {
-  const isNonVeg = dietaryPreference === "non-vegetarian";
-  const mealNames = isNonVeg ? nonVegMealNames : vegMealNames;
-  const seen = new Set<string>();
-  const suggestions: Suggestion[] = [];
-  const rand = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
-  const shuffledNames = shuffle(mealNames);
-  const shuffledDescs = shuffle(descriptions);
-
-  for (let i = 0; i < 4; i++) {
-    let calories = rand(120, 350);
-    let protein = rand(6, 22);
-    let key = `${calories}-${protein}`;
-    let attempts = 0;
-    while (seen.has(key) && attempts++ < 20) {
-      calories = rand(120, 350);
-      protein = rand(6, 22);
-      key = `${calories}-${protein}`;
-    }
-    seen.add(key);
-    suggestions.push({
-      name: shuffledNames[i],
-      calories,
-      protein,
-      description: shuffledDescs[i % shuffledDescs.length],
-    });
-  }
-  return suggestions;
-};
 
 interface MealSuggestionsProps {
   dietaryPreference?: string | null;
+  goal?: string | null;
+  remainingCalories?: number;
+  remainingProtein?: number;
+  bmiCategory?: string;
+  medicalConditions?: string[];
 }
 
-const MealSuggestions = ({ dietaryPreference }: MealSuggestionsProps) => {
+const MealSuggestions = ({
+  dietaryPreference,
+  goal,
+  remainingCalories = 0,
+  remainingProtein = 0,
+  bmiCategory,
+  medicalConditions = [],
+}: MealSuggestionsProps) => {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selectedRecipe, setSelectedRecipe] = useState<Suggestion | null>(null);
 
   useEffect(() => {
-    setSuggestions(generateRandomSuggestions(dietaryPreference));
-  }, [dietaryPreference]);
+    setSuggestions(
+      generateHybridRecommendations({
+        dietaryPreference,
+        goal,
+        bmiCategory,
+        remainingCalories,
+        remainingProtein,
+        medicalConditions,
+      })
+    );
+  }, [dietaryPreference, goal, bmiCategory, remainingCalories, remainingProtein, medicalConditions]);
 
   const recipe = selectedRecipe ? recipes[selectedRecipe.name] : null;
+  const safeRemaining = Math.max(0, Math.round(remainingCalories));
 
   if (suggestions.length === 0) return null;
 
@@ -115,6 +61,10 @@ const MealSuggestions = ({ dietaryPreference }: MealSuggestionsProps) => {
             <Sparkles className="w-5 h-5 text-primary" />
             Suggested Next Meals
           </CardTitle>
+          <p className="text-xs text-muted-foreground font-body">
+            Based on your profile: {dietaryPreference || "balanced"} diet, {goal || "maintain"} goal,
+            {" "}BMI category {bmiCategory || "N/A"}, and about {safeRemaining} kcal left today.
+          </p>
         </CardHeader>
         <CardContent className="space-y-3">
           {suggestions.map((s, i) => (
@@ -127,6 +77,12 @@ const MealSuggestions = ({ dietaryPreference }: MealSuggestionsProps) => {
               <div>
                 <p className="font-semibold text-sm text-foreground font-body">{s.name}</p>
                 <p className="text-xs text-muted-foreground font-body">{s.description}</p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Tier-1: {s.tier1Reason}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Tier-2: {s.tier2Reason}
+                </p>
               </div>
               <div className="text-right">
                 <p className="text-sm font-bold text-primary font-body">{s.calories} kcal</p>

@@ -1,0 +1,7 @@
+{
+  "profiles_evaluated": 200,
+  "coverage_percent": 97.0,
+  "constraint_compliance_percent": 100.0,
+  "avg_recommendations_per_profile": 2.41,
+  "note": "Generated from demo evaluation pipeline. Re-run ml-service/evaluate_system.py to refresh."
+}

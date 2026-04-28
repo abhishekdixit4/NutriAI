@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import Onboarding from "./pages/Onboarding";
 import FeatureDetail from "./pages/FeatureDetail";
 import Settings from "./pages/Settings";
+import ResearchResults from "./pages/ResearchResults";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,6 +26,7 @@ const App = () => (
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/results" element={<ResearchResults />} />
             <Route path="/features/:slug" element={<FeatureDetail />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

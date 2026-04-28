@@ -1,5 +1,5 @@
 // Appwrite Cloud Function - Strict & Safe Indian Food Detector
-// Env vars: GEMINI_API_KEY, OPENAI_API_KEY, REPLICATE_API_TOKEN, HUGGINGFACE_TOKEN
+// Env vars: RESNET_SERVICE_URL, RESNET_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, REPLICATE_API_TOKEN, HUGGINGFACE_TOKEN
 // Deploy `foods-database.json` next to main.js (~5000 keyword rows). Regenerate: node scripts/generate-foods-database.mjs
 
 import { readFileSync } from "fs";
@@ -442,6 +442,20 @@ async function analyzeWithHuggingFace(token, imageBytes) {
   throw new Error("HuggingFace failed");
 }
 
+async function analyzeWithResnet(serviceUrl, apiKey, mimeType, base64Data) {
+  const res = await fetch(serviceUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    },
+    body: JSON.stringify({ image_base64: `data:${mimeType};base64,${base64Data}` }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json?.error || `ResNet service failed: ${res.status}`);
+  return json;
+}
+
 export default async ({ req, res, log, error }) => {
   try {
     const body = req.bodyJson || {};
@@ -461,6 +475,32 @@ export default async ({ req, res, log, error }) => {
     const imageBytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
     const imageDataUri = `data:${mimeType};base64,${base64Data}`;
     const fallbackCalories = fallbackCaloriesFromSeed(base64Data.slice(0, 1800));
+
+    if (process.env.RESNET_SERVICE_URL) {
+      try {
+        const cnn = await analyzeWithResnet(
+          process.env.RESNET_SERVICE_URL,
+          process.env.RESNET_API_KEY,
+          mimeType,
+          base64Data
+        );
+        const mealName = sanitizeAiPrimary(cnn?.meal_name || cnn?.class_name || "") || "Detected Meal";
+        const caloriesNum = Number(cnn?.calories_value ?? cnn?.estimated_calories ?? fallbackCalories) || fallbackCalories;
+        const topCandidate = {
+          meal_name: mealName,
+          confidence: Number(cnn?.confidence ?? 0),
+        };
+        return res.json({
+          ...nutritionPayload(mealName, caloriesNum, [mealName], "ResNet-50 inference service"),
+          confidence: topCandidate.confidence,
+          dish_candidates: [topCandidate],
+          model: String(cnn?.model || "resnet50"),
+          inference_ms: Number(cnn?.inference_ms || 0),
+        });
+      } catch (e) {
+        log(`ResNet service failed, falling back to API providers: ${e.message}`);
+      }
+    }
 
     const providers = [
       { name: "Gemini", enabled: process.env.GEMINI_API_KEY, run: () => analyzeWithGemini(process.env.GEMINI_API_KEY, mimeType, base64Data) },

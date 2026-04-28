@@ -22,6 +22,19 @@ export function calculateTDEE(bmr: number, activityLevel: string): number {
   return Math.round(bmr * (activityMultipliers[activityLevel] || 1.55));
 }
 
+export function calculateBMI(weightKg: number, heightCm: number): number {
+  const heightM = heightCm / 100;
+  if (!heightM) return 0;
+  return Number((weightKg / (heightM * heightM)).toFixed(1));
+}
+
+export function getBMICategory(bmi: number): string {
+  if (bmi < 18.5) return "Underweight";
+  if (bmi < 25) return "Normal";
+  if (bmi < 30) return "Overweight";
+  return "Obese";
+}
+
 export function calculateTargets(
   weightKg: number,
   heightCm: number,

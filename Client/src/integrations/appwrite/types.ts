@@ -13,6 +13,9 @@ export interface Profile {
   target_protein?: number | null;
   target_carbs?: number | null;
   target_fat?: number | null;
+  medical_conditions?: string[] | null;
+  allergen_flags?: string[] | null;
+  cultural_preference?: string | null;
   onboarding_completed?: boolean | null;
 }
 

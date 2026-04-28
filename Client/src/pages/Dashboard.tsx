@@ -9,10 +9,11 @@ import MealSuggestions from "@/components/MealSuggestions";
 import AddMealDialog from "@/components/AddMealDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { LogOut, Mail, Flame, Target, ChevronLeft, ChevronRight, History } from "lucide-react";
+import { LogOut, Mail, Flame, Target, ChevronLeft, ChevronRight, History, FileBarChart2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { format, isToday, isYesterday, addDays, subDays } from "date-fns";
 import type { Profile, MealLog } from "@/integrations/appwrite/types";
+import { calculateBMR, calculateTDEE, calculateBMI, getBMICategory } from "@/lib/nutrition";
 
 const formatDateLabel = (d: Date) => {
   if (isToday(d)) return "Today";
@@ -94,7 +95,7 @@ const Dashboard = () => {
       return;
     }
     if (user) fetchData();
-  }, [user, authLoading]);
+  }, [user, authLoading, navigate, fetchData]);
 
   const handleDateChange = (delta: number) => {
     const next = addDays(selectedDate, delta);
@@ -132,9 +133,18 @@ const Dashboard = () => {
     { calories: 0, protein: 0, carbs: 0, fat: 0 }
   );
 
-  const bmi = profile.weight_kg && profile.height_cm
-    ? (Number(profile.weight_kg) / Math.pow(Number(profile.height_cm) / 100, 2)).toFixed(1)
+  const bmiValue = profile.weight_kg && profile.height_cm
+    ? calculateBMI(Number(profile.weight_kg), Number(profile.height_cm))
     : null;
+  const bmiCategory = bmiValue ? getBMICategory(bmiValue) : null;
+  const bmr = profile.weight_kg && profile.height_cm && profile.age && profile.gender
+    ? Math.round(calculateBMR(Number(profile.weight_kg), Number(profile.height_cm), Number(profile.age), String(profile.gender)))
+    : null;
+  const tdee = bmr && profile.activity_level
+    ? calculateTDEE(bmr, String(profile.activity_level))
+    : null;
+  const remainingCalories = Math.max(0, (profile.target_calories || 0) - totals.calories);
+  const remainingProtein = Math.max(0, (profile.target_protein || 0) - totals.protein);
 
   return (
     <div className="min-h-screen bg-background">
@@ -148,6 +158,9 @@ const Dashboard = () => {
             <AddMealDialog onMealAdded={fetchData} />
             <Button variant="ghost" size="icon" onClick={() => navigate("/settings")} aria-label="Open contact page">
               <Mail className="w-5 h-5" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => navigate("/results")} aria-label="Open research results">
+              <FileBarChart2 className="w-5 h-5" />
             </Button>
             <Button variant="ghost" size="icon" onClick={signOut} aria-label="Sign out">
               <LogOut className="w-5 h-5" />
@@ -169,8 +182,8 @@ const Dashboard = () => {
         </motion.div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { label: "BMI", value: bmi || "—", icon: Target, color: "text-primary" },
+            {[
+            { label: "BMI", value: bmiValue ? `${bmiValue} (${bmiCategory})` : "—", icon: Target, color: "text-primary" },
             { label: "Goal", value: profile.goal === "lose" ? "Lose" : profile.goal === "gain" ? "Gain" : "Maintain", icon: Flame, color: "text-accent" },
             { label: "Diet", value: profile.dietary_preference || "—", icon: () => <span className="text-lg">🌿</span>, color: "text-secondary" },
             { label: "Activity", value: profile.activity_level || "—", icon: () => <span className="text-lg">🏃</span>, color: "text-primary" },
@@ -271,7 +284,32 @@ const Dashboard = () => {
 
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
             <h2 className="text-xl font-display font-bold text-foreground mb-4">AI Recommendations</h2>
-            <MealSuggestions dietaryPreference={profile.dietary_preference} />
+            <MealSuggestions
+              dietaryPreference={profile.dietary_preference}
+              goal={profile.goal}
+              remainingCalories={remainingCalories}
+              remainingProtein={remainingProtein}
+              bmiCategory={bmiCategory || undefined}
+              medicalConditions={profile.medical_conditions || []}
+            />
+            <Card className="shadow-card mt-4">
+              <CardContent className="p-4 space-y-2">
+                <h3 className="font-semibold font-display">Why these recommendations (XAI)</h3>
+                <p className="text-sm text-muted-foreground">
+                  Your suggestions are adjusted using your BMI category ({bmiCategory || "N/A"}), activity level
+                  ({profile.activity_level || "N/A"}), and goal ({profile.goal || "N/A"}).
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Estimated BMR: {bmr ?? "N/A"} kcal/day, TDEE: {tdee ?? "N/A"} kcal/day, target calories:
+                  {" "}{profile.target_calories || "N/A"} kcal/day, remaining today: {remainingCalories} kcal.
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Medical constraints applied: {(profile.medical_conditions || []).length > 0
+                    ? (profile.medical_conditions || []).join(", ")
+                    : "None selected"}.
+                </p>
+              </CardContent>
+            </Card>
           </motion.div>
         </div>
       </main>

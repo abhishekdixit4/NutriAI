@@ -29,6 +29,9 @@
    - `target_protein` (integer)
    - `target_carbs` (integer)
    - `target_fat` (integer)
+   - `medical_conditions` (string[], optional)
+   - `allergen_flags` (string[], optional)
+   - `cultural_preference` (string, optional)
    - `onboarding_completed` (boolean)
 3. Create collection **meal_logs** with attributes:
    - `user_id` (string, required)
@@ -53,6 +56,8 @@
 1. **Functions** → Create function → Name: `analyze-food-image`
 2. Runtime: **Node.js 18**
 3. Add environment variables:
+   - `RESNET_SERVICE_URL` (optional, e.g. `https://your-cnn-service/predict`)
+   - `RESNET_API_KEY` (optional)
    - `GEMINI_API_KEY` or `OPENAI_API_KEY` or `REPLICATE_API_TOKEN` or `HUGGINGFACE_TOKEN`
 4. Deploy the code from `appwrite/functions/analyze-food-image/src/` (**include `main.js` and `foods-database.json`** — ~5000 Indian food keywords). To regenerate the JSON: `node scripts/generate-foods-database.mjs` from `analyze-food-image`.
 5. Set **Execute** permission to `users` or `any`

@@ -12,6 +12,7 @@ import { calculateTargets } from "@/lib/nutrition";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { ArrowLeft, ArrowRight } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const Onboarding = () => {
   const { user, loading: authLoading } = useAuth();
@@ -27,7 +28,10 @@ const Onboarding = () => {
     activity_level: "moderate",
     dietary_preference: "vegetarian",
     goal: "maintain",
+    cultural_preference: "south-indian",
   });
+  const [medicalConditions, setMedicalConditions] = useState<string[]>([]);
+  const [allergenFlags, setAllergenFlags] = useState<string[]>([]);
 
   const update = (key: string, val: string) => setForm((p) => ({ ...p, [key]: val }));
 
@@ -54,7 +58,10 @@ const Onboarding = () => {
             activity_level: (profile as { activity_level?: string }).activity_level ?? "moderate",
             dietary_preference: (profile as { dietary_preference?: string }).dietary_preference ?? "vegetarian",
             goal: (profile as { goal?: string }).goal ?? "maintain",
+            cultural_preference: (profile as { cultural_preference?: string }).cultural_preference ?? "south-indian",
           }));
+          setMedicalConditions((profile as { medical_conditions?: string[] }).medical_conditions ?? []);
+          setAllergenFlags((profile as { allergen_flags?: string[] }).allergen_flags ?? []);
         }
       } catch {
         // No profile yet, show form
@@ -101,6 +108,26 @@ const Onboarding = () => {
         activity_level: form.activity_level,
         dietary_preference: form.dietary_preference,
         goal: form.goal,
+        cultural_preference: form.cultural_preference,
+        target_calories: targets.calories,
+        target_protein: targets.protein,
+        target_carbs: targets.carbs,
+        target_fat: targets.fat,
+        medical_conditions: medicalConditions,
+        allergen_flags: allergenFlags,
+        onboarding_completed: true,
+      };
+
+      const fallbackDoc = {
+        user_id: user.$id,
+        full_name: form.full_name || null,
+        age: parseInt(form.age),
+        gender: form.gender,
+        height_cm: parseFloat(form.height_cm),
+        weight_kg: parseFloat(form.weight_kg),
+        activity_level: form.activity_level,
+        dietary_preference: form.dietary_preference,
+        goal: form.goal,
         target_calories: targets.calories,
         target_protein: targets.protein,
         target_carbs: targets.carbs,
@@ -108,10 +135,19 @@ const Onboarding = () => {
         onboarding_completed: true,
       };
 
-      if (existing.documents.length > 0) {
-        await databases.updateDocument(DB_ID, PROFILES_COLLECTION, existing.documents[0].$id, doc);
-      } else {
-        await databases.createDocument(DB_ID, PROFILES_COLLECTION, ID.unique(), doc);
+      try {
+        if (existing.documents.length > 0) {
+          await databases.updateDocument(DB_ID, PROFILES_COLLECTION, existing.documents[0].$id, doc);
+        } else {
+          await databases.createDocument(DB_ID, PROFILES_COLLECTION, ID.unique(), doc);
+        }
+      } catch {
+        // Backward compatible when Appwrite schema has not added new fields yet.
+        if (existing.documents.length > 0) {
+          await databases.updateDocument(DB_ID, PROFILES_COLLECTION, existing.documents[0].$id, fallbackDoc);
+        } else {
+          await databases.createDocument(DB_ID, PROFILES_COLLECTION, ID.unique(), fallbackDoc);
+        }
       }
 
       toast.success("Profile setup complete!");
@@ -216,6 +252,18 @@ const Onboarding = () => {
             </div>
 
             <div>
+              <Label className="font-body">Cultural Preference</Label>
+              <Select value={form.cultural_preference} onValueChange={(v) => update("cultural_preference", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="north-indian">North Indian</SelectItem>
+                  <SelectItem value="south-indian">South Indian</SelectItem>
+                  <SelectItem value="mixed-indian">Mixed Indian</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
               <Label className="font-body">Goal</Label>
               <Select value={form.goal} onValueChange={(v) => update("goal", v)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -225,6 +273,44 @@ const Onboarding = () => {
                   <SelectItem value="gain">Gain Muscle</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div>
+              <Label className="font-body">Medical Conditions</Label>
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                {["diabetes", "hypertension", "obesity"].map((condition) => (
+                  <label key={condition} className="flex items-center gap-2 text-sm capitalize">
+                    <Checkbox
+                      checked={medicalConditions.includes(condition)}
+                      onCheckedChange={(checked) =>
+                        setMedicalConditions((prev) =>
+                          checked ? [...prev, condition] : prev.filter((v) => v !== condition)
+                        )
+                      }
+                    />
+                    {condition}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label className="font-body">Allergen Flags</Label>
+              <div className="grid grid-cols-2 gap-3 mt-2">
+                {["nuts", "dairy", "gluten", "seafood"].map((allergen) => (
+                  <label key={allergen} className="flex items-center gap-2 text-sm capitalize">
+                    <Checkbox
+                      checked={allergenFlags.includes(allergen)}
+                      onCheckedChange={(checked) =>
+                        setAllergenFlags((prev) =>
+                          checked ? [...prev, allergen] : prev.filter((v) => v !== allergen)
+                        )
+                      }
+                    />
+                    {allergen}
+                  </label>
+                ))}
+              </div>
             </div>
 
             <Button
